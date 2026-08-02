@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from '@emotion/styled';
-import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
+import {
+  Virtuoso,
+  type IndexLocationWithAlign,
+  type ListRange,
+  type VirtuosoHandle,
+} from 'react-virtuoso';
 import { JumpToast } from './components/JumpToast';
 import { MessageItem } from './components/MessageItem';
 import { SettingsDialog } from './components/SettingsDialog';
+import { useScrollAnchor } from './hooks/useScrollAnchor';
+import { prefetchImageSizes } from './data/imageSize';
 import {
   LAST_READ_ID,
   NEWEST_ID,
@@ -155,18 +162,41 @@ export default function App() {
   const [loadingNewer, setLoadingNewer] = useState(false);
   const [visibleRange, setVisibleRange] = useState<ListRange>({ startIndex: 0, endIndex: 0 });
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
+  /**
+   * 定位一律交給 initialTopMostItemIndex，不要 mount 後才 scrollToIndex：
+   * 那時 Virtuoso 還沒量到真實的 item 高度，會用預估值算偏。
+   * Virtuoso 只在掛載時讀這個值，而每次重新載入視窗都會經過 loading 把它卸載重掛。
+   */
+  const [initialLocation, setInitialLocation] = useState<IndexLocationWithAlign>({
+    index: 0,
+    align: 'center',
+  });
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const initializedModeRef = useRef<EntryMode | null>(null);
+  const windowAtBottomRef = useRef(false);
+  const stickToBottomRef = useRef(false);
+  const { setScroller, suspend } = useScrollAnchor({ atBottom: stickToBottomRef });
+
+  /**
+   * Virtuoso 的 atBottom 指的是「已載入視窗的底部」，不是「對話的最新一則」。
+   * 上次閱讀模式的視窗底部離 NEWEST_ID 還很遠，在那裡黏底只會不斷觸發載入更新訊息。
+   */
+  const syncStickToBottom = useCallback(() => {
+    stickToBottomRef.current =
+      windowAtBottomRef.current && messagesRef.current.at(-1)?.id === NEWEST_ID;
+  }, []);
 
   useEffect(() => {
     messagesRef.current = messages;
-  }, [messages]);
+    syncStickToBottom();
+  }, [messages, syncStickToBottom]);
 
   const focusMessage = useCallback((messageId: number) => {
     const localIndex = messagesRef.current.findIndex((message) => message.id === messageId);
     if (localIndex < 0) return false;
 
+    suspend();
     virtuosoRef.current?.scrollToIndex({
       index: firstItemIndex + localIndex,
       align: 'center',
@@ -175,7 +205,7 @@ export default function App() {
     setHighlightedId(messageId);
     window.setTimeout(() => setHighlightedId(null), 1_800);
     return true;
-  }, [firstItemIndex]);
+  }, [firstItemIndex, suspend]);
 
   const initialize = useCallback(async (mode: EntryMode) => {
     setLoading(true);
@@ -186,21 +216,19 @@ export default function App() {
     const after = mode === 'newest' ? 0 : PAGE_SIZE;
     const windowData = await loadSurrounding(targetId, before, after);
 
-    setMessages(windowData.messages);
-    const windowFirstItemIndex = windowData.firstId - 1;
-    setFirstItemIndex(windowFirstItemIndex);
-    setLoading(false);
-
-    requestAnimationFrame(() => {
-      const targetIndex = windowData.messages.findIndex((message) => message.id === targetId);
-      virtuosoRef.current?.scrollToIndex({
-        index: windowFirstItemIndex + Math.max(targetIndex, 0),
-        align: mode === 'newest' ? 'end' : 'center',
-      });
-      setHighlightedId(targetId);
-      window.setTimeout(() => setHighlightedId(null), 1_800);
+    prefetchImageSizes(windowData.messages);
+    // Virtuoso 重新掛載後的首次量測會大幅搬動內容，錨點補償要整段避開。
+    suspend(1_200);
+    setInitialLocation({
+      index: Math.max(windowData.messages.findIndex((message) => message.id === targetId), 0),
+      align: mode === 'newest' ? 'end' : 'center',
     });
-  }, []);
+    setMessages(windowData.messages);
+    setFirstItemIndex(windowData.firstId - 1);
+    setLoading(false);
+    setHighlightedId(targetId);
+    window.setTimeout(() => setHighlightedId(null), 1_800);
+  }, [suspend]);
 
   useEffect(() => {
     if (entryMode && initializedModeRef.current !== entryMode) {
@@ -221,6 +249,7 @@ export default function App() {
     setLoadingOlder(true);
     const older = await loadOlder(first.id);
     if (older.length > 0) {
+      prefetchImageSizes(older);
       setMessages((current) => [...older, ...current]);
       setFirstItemIndex((current) => current - older.length);
     }
@@ -234,6 +263,7 @@ export default function App() {
     setLoadingNewer(true);
     const newer = await loadNewer(last.id);
     if (newer.length > 0) {
+      prefetchImageSizes(newer);
       setMessages((current) => [...current, ...newer]);
     }
     setLoadingNewer(false);
@@ -249,19 +279,19 @@ export default function App() {
         align === 'end' ? PAGE_SIZE * 2 : PAGE_SIZE,
         align === 'end' ? 0 : PAGE_SIZE,
       );
-      setMessages(windowData.messages);
-      const windowFirstItemIndex = windowData.firstId - 1;
-      setFirstItemIndex(windowFirstItemIndex);
-      setLoading(false);
-
-      requestAnimationFrame(() => {
-        const targetIndex = windowData.messages.findIndex((message) => message.id === targetId);
-        virtuosoRef.current?.scrollToIndex({ index: windowFirstItemIndex + targetIndex, align });
-        setHighlightedId(targetId);
-        window.setTimeout(() => setHighlightedId(null), 1_800);
+      prefetchImageSizes(windowData.messages);
+      suspend(1_200);
+      setInitialLocation({
+        index: Math.max(windowData.messages.findIndex((message) => message.id === targetId), 0),
+        align,
       });
+      setMessages(windowData.messages);
+      setFirstItemIndex(windowData.firstId - 1);
+      setLoading(false);
+      setHighlightedId(targetId);
+      window.setTimeout(() => setHighlightedId(null), 1_800);
     },
-    [focusMessage],
+    [focusMessage, suspend],
   );
 
   const visibleStart = Math.max(0, visibleRange.startIndex - firstItemIndex);
@@ -310,13 +340,19 @@ export default function App() {
           ) : (
             <Virtuoso
               ref={virtuosoRef}
+              scrollerRef={setScroller}
               data={messages}
               firstItemIndex={firstItemIndex}
-              initialTopMostItemIndex={0}
+              initialTopMostItemIndex={initialLocation}
               rangeChanged={setVisibleRange}
               startReached={() => void loadOlderMessages()}
               endReached={() => void loadNewerMessages()}
-              increaseViewportBy={{ top: 500, bottom: 700 }}
+              atBottomThreshold={80}
+              atBottomStateChange={(bottom) => {
+                windowAtBottomRef.current = bottom;
+                syncStickToBottom();
+              }}
+              increaseViewportBy={{ top: 800, bottom: 900 }}
               computeItemKey={(_, message) => message.id}
               itemContent={(_, message) => (
                 <MessageItem message={message} highlighted={message.id === highlightedId} />

@@ -7,6 +7,8 @@ export interface ChatMessage {
   sentAt: string;
   text: string;
   isMine: boolean;
+  /** 後端只提供連結，尺寸由前端量測。 */
+  imageUrl?: string;
 }
 
 export interface LoadedWindow {

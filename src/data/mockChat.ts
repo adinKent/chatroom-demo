@@ -28,6 +28,24 @@ const samples = [
 
 const startTime = new Date('2025-01-01T00:00:00Z').getTime();
 
+const IMAGE_EVERY = 7;
+
+// 刻意用差異很大的比例，才看得出尺寸未知時的位移問題。
+const imageShapes = [
+  [800, 600],
+  [640, 960],
+  [1200, 675],
+  [500, 500],
+  [900, 400],
+  [720, 1280],
+];
+
+function imageUrlFor(id: number): string | undefined {
+  if (id % IMAGE_EVERY !== 0) return undefined;
+  const [width, height] = imageShapes[(id / IMAGE_EVERY) % imageShapes.length];
+  return `https://picsum.photos/seed/teams-${id}/${width}/${height}`;
+}
+
 function createMessage(id: number): ChatMessage {
   const author = authors[id % authors.length];
   const sentAt = new Date(startTime + id * 90_000).toISOString();
@@ -39,6 +57,7 @@ function createMessage(id: number): ChatMessage {
     sentAt,
     text: `${samples[id % samples.length]}（訊息 #${id.toLocaleString('zh-TW')}）`,
     isMine: author.name === '你',
+    imageUrl: imageUrlFor(id),
   };
 }
 

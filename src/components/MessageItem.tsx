@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import styled from '@emotion/styled';
+import { MessageImage } from './MessageImage';
 import type { ChatMessage } from '../types';
 
 const Row = styled.article<{ highlighted: boolean }>`
@@ -68,7 +69,10 @@ export const MessageItem = memo(function MessageItem({ message, highlighted }: P
           <strong>{message.author}</strong>
           <Time dateTime={message.sentAt}>{time}</Time>
         </Header>
-        <Bubble mine={message.isMine}>{message.text}</Bubble>
+        <Bubble mine={message.isMine}>
+          {message.text}
+          {message.imageUrl && <MessageImage url={message.imageUrl} />}
+        </Bubble>
       </div>
     </Row>
   );
