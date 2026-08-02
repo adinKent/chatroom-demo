@@ -175,7 +175,14 @@ async function wheel(session, deltaY, times) {
   await sleep(1_500);
 }
 
-async function runMode(session, { label, optionText, targetId }) {
+const DIVIDER_PROBE = `(() => {
+  const divider = document.querySelector('[data-testid="unread-divider"]');
+  if (!divider) return { present: false };
+  const next = divider.nextElementSibling;
+  return { present: true, nextId: next ? Number(next.dataset.messageId) : null };
+})()`;
+
+async function runMode(session, { label, optionText, targetId, firstUnreadId }) {
   const failures = [];
   const note = (text) => console.log(`    ${text}`);
 
@@ -211,6 +218,17 @@ async function runMode(session, { label, optionText, targetId }) {
   note(`landed     top=${landed.scrollTop} h=${landed.scrollHeight} vis=${landed.first}..${landed.last}`);
   if (!(targetId >= landed.first && targetId <= landed.last)) {
     failures.push(`定位偏掉：期望看到 ${targetId}，實際可視範圍是 ${landed.first}..${landed.last}`);
+  }
+
+  if (firstUnreadId !== undefined) {
+    const divider = await session.evaluate(DIVIDER_PROBE);
+    if (!divider.present) {
+      failures.push('找不到未讀分隔線');
+    } else if (divider.nextId !== firstUnreadId) {
+      failures.push(`未讀分隔線位置錯誤：下一則是 ${divider.nextId}，期望 ${firstUnreadId}`);
+    } else {
+      note(`divider    在訊息 ${divider.nextId} 上方`);
+    }
   }
 
   // 觀察期：圖片陸續載入撐開高度。可視範圍不該因此改變，也不該連鎖載入更新訊息。
@@ -284,7 +302,12 @@ try {
   const results = [];
   console.log('  上次閱讀位置');
   results.push(
-    await runMode(session, { label: '上次閱讀位置', optionText: '前往上次閱讀', targetId: lastReadId }),
+    await runMode(session, {
+      label: '上次閱讀位置',
+      optionText: '前往上次閱讀',
+      targetId: lastReadId,
+      firstUnreadId: lastReadId + 1,
+    }),
   );
   console.log('  最新訊息');
   results.push(

@@ -8,6 +8,7 @@ React + TypeScript 單一聊天室 demo，模擬 Microsoft Teams 的大量訊息
   - 前往上次閱讀訊息
   - 前往最新訊息
 - 使用 `localStorage` 保存進入位置偏好。
+- 第一則未讀訊息上方顯示 Teams 風格的「上次閱讀」分隔線。
 - 前往上次閱讀時，如果最新訊息在可視區域下方，顯示底部 toast。
 - 前往最新訊息時，如果上次閱讀訊息在可視區域上方，顯示頂部 toast。
 - `loadSurrounding(targetId)` 模擬以指定訊息為中心做 lazy load。

@@ -355,7 +355,11 @@ export default function App() {
               increaseViewportBy={{ top: 800, bottom: 900 }}
               computeItemKey={(_, message) => message.id}
               itemContent={(_, message) => (
-                <MessageItem message={message} highlighted={message.id === highlightedId} />
+                <MessageItem
+                  message={message}
+                  highlighted={message.id === highlightedId}
+                  firstUnread={message.id === LAST_READ_ID + 1}
+                />
               )}
               components={{
                 Header: () => <LoadMarker>{loadingOlder ? '載入較舊訊息…' : '向上捲動載入較舊訊息'}</LoadMarker>,

@@ -24,6 +24,24 @@ const Avatar = styled.div`
   font-weight: 800;
 `;
 
+/** Teams 的未讀分隔線：一條橫線，標籤靠右。 */
+const UnreadDivider = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 2px;
+  color: #c4314b;
+  font-size: 12px;
+  font-weight: 700;
+
+  &::before {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #c4314b;
+  }
+`;
+
 const Header = styled.div`
   display: flex;
   align-items: baseline;
@@ -51,9 +69,11 @@ const Bubble = styled.div<{ mine: boolean }>`
 interface Props {
   message: ChatMessage;
   highlighted: boolean;
+  /** 這則是第一則未讀訊息，上方要畫分隔線。 */
+  firstUnread: boolean;
 }
 
-export const MessageItem = memo(function MessageItem({ message, highlighted }: Props) {
+export const MessageItem = memo(function MessageItem({ message, highlighted, firstUnread }: Props) {
   const time = new Intl.DateTimeFormat('zh-TW', {
     month: '2-digit',
     day: '2-digit',
@@ -62,18 +82,21 @@ export const MessageItem = memo(function MessageItem({ message, highlighted }: P
   }).format(new Date(message.sentAt));
 
   return (
-    <Row highlighted={highlighted} data-message-id={message.id}>
-      <Avatar aria-hidden="true">{message.avatar}</Avatar>
-      <div>
-        <Header>
-          <strong>{message.author}</strong>
-          <Time dateTime={message.sentAt}>{time}</Time>
-        </Header>
-        <Bubble mine={message.isMine}>
-          {message.text}
-          {message.imageUrl && <MessageImage url={message.imageUrl} />}
-        </Bubble>
-      </div>
-    </Row>
+    <>
+      {firstUnread && <UnreadDivider data-testid="unread-divider">上次閱讀</UnreadDivider>}
+      <Row highlighted={highlighted} data-message-id={message.id}>
+        <Avatar aria-hidden="true">{message.avatar}</Avatar>
+        <div>
+          <Header>
+            <strong>{message.author}</strong>
+            <Time dateTime={message.sentAt}>{time}</Time>
+          </Header>
+          <Bubble mine={message.isMine}>
+            {message.text}
+            {message.imageUrl && <MessageImage url={message.imageUrl} />}
+          </Bubble>
+        </div>
+      </Row>
+    </>
   );
 });
