@@ -198,14 +198,16 @@ export default function App() {
 
     suspend();
     virtuosoRef.current?.scrollToIndex({
-      index: firstItemIndex + localIndex,
+      // scrollToIndex 使用目前 data 的區域索引；firstItemIndex 只用來維持 prepend 的
+      // 全域編號。兩者相加會超出 data 範圍，讓 Virtuoso 誤捲到 window 尾端。
+      index: localIndex,
       align: 'center',
       behavior: 'smooth',
     });
     setHighlightedId(messageId);
     window.setTimeout(() => setHighlightedId(null), 1_800);
     return true;
-  }, [firstItemIndex, suspend]);
+  }, [suspend]);
 
   const initialize = useCallback(async (mode: EntryMode) => {
     setLoading(true);

@@ -175,6 +175,16 @@ async function wheel(session, deltaY, times) {
   await sleep(1_500);
 }
 
+function clickByText(text) {
+  return `(() => {
+    const button = [...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent.includes(${JSON.stringify(text)}));
+    if (!button) return 'missing';
+    button.click();
+    return 'ok';
+  })()`;
+}
+
 const DIVIDER_PROBE = `(() => {
   const divider = document.querySelector('[data-testid="unread-divider"]');
   if (!divider) return { present: false };
@@ -194,14 +204,6 @@ async function runMode(session, { label, optionText, targetId, firstUnreadId }) 
   await sleep(1_500);
   // 頁面載完才開始限速，只拖慢圖片，讓它們確定是進到畫面之後才撐開。
   await throttle(session, true);
-
-  const clickByText = (text) => `(() => {
-    const button = [...document.querySelectorAll('button')]
-      .find((b) => b.textContent.includes(${JSON.stringify(text)}));
-    if (!button) return 'missing';
-    button.click();
-    return 'ok';
-  })()`;
 
   // 兩次點擊要分開；同一個 task 內 confirm 讀到的還是上一個 render 的 draftMode。
   if ((await session.evaluate(clickByText(optionText))) === 'missing') {
@@ -280,6 +282,45 @@ async function runMode(session, { label, optionText, targetId, firstUnreadId }) 
   return failures.length === 0;
 }
 
+/**
+ * 目標已在目前 data window 時會走 focusMessage，而不是重新載入 surrounding window。
+ * 這條路徑若誤把 firstItemIndex 加進 scrollToIndex，會往 window 尾端捲並觸發連續載入。
+ */
+async function verifyLocalLastReadJump(session, lastReadId) {
+  const failures = [];
+  const label = '已載入 window 內跳回上次閱讀';
+  console.log(`  ${label}`);
+
+  if ((await session.evaluate(clickByText('上次閱讀位置在上方'))) === 'missing') {
+    failures.push('最新訊息畫面找不到上次閱讀 toast');
+  } else {
+    await sleep(1_500);
+    await wheel(session, 300, 12);
+
+    const before = await session.evaluate(PROBE);
+    if (!(before.first > lastReadId)) {
+      failures.push(`沒有捲到上次閱讀位置下方：可視範圍 ${before.first}..${before.last}`);
+    } else if ((await session.evaluate(clickByText('上次閱讀位置在上方'))) === 'missing') {
+      failures.push('目標仍在 window 內時找不到上次閱讀 toast');
+    } else {
+      await sleep(1_800);
+      const landed = await session.evaluate(PROBE);
+      console.log(
+        `    local-jump top=${landed.scrollTop} h=${landed.scrollHeight} vis=${landed.first}..${landed.last}`,
+      );
+      if (!(lastReadId >= landed.first && lastReadId <= landed.last)) {
+        failures.push(
+          `區域跳轉方向錯誤：期望看到 ${lastReadId}，實際可視範圍是 ${landed.first}..${landed.last}`,
+        );
+      }
+    }
+  }
+
+  console.log(`  ${failures.length === 0 ? 'PASS' : 'FAIL'}  ${label}`);
+  for (const failure of failures) console.log(`        ${failure}`);
+  return failures.length === 0;
+}
+
 const { lastReadId, newestId } = readConstants();
 const profile = mkdtempSync(join(tmpdir(), 'teams-chat-smoke-'));
 let devServer;
@@ -313,6 +354,7 @@ try {
   results.push(
     await runMode(session, { label: '最新訊息', optionText: '前往最新訊息', targetId: newestId }),
   );
+  results.push(await verifyLocalLastReadJump(session, lastReadId));
 
   if (session.pageErrors.length > 0) {
     console.log('\n  頁面拋出例外：');
