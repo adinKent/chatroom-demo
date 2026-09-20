@@ -9,6 +9,7 @@ import {
 import { JumpToast } from './components/JumpToast';
 import { MessageItem } from './components/MessageItem';
 import { SettingsDialog } from './components/SettingsDialog';
+import { WindowControls } from './components/WindowControls';
 import { ZoomControl } from './components/ZoomControl';
 import { useScrollAnchor } from './hooks/useScrollAnchor';
 import { useZoom } from './hooks/useZoom';
@@ -52,6 +53,8 @@ const Header = styled.header`
   padding: 14px 18px;
   border-bottom: 1px solid #dedee8;
   background: #fff;
+  -webkit-app-region: drag;
+  user-select: none;
 `;
 
 const RoomMeta = styled.div`
@@ -84,7 +87,9 @@ const RoomIcon = styled.div`
 
 const Toolbar = styled.div`
   display: flex;
+  align-items: center;
   gap: 8px;
+  -webkit-app-region: no-drag;
 `;
 
 const ToolButton = styled.button`
@@ -94,6 +99,7 @@ const ToolButton = styled.button`
   background: #fff;
   color: #34354b;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 
   &:hover {
     background: #f4f3ff;
@@ -353,7 +359,14 @@ export default function App() {
   return (
     <Shell>
       <AppFrame>
-        <Header>
+        <Header
+          onDoubleClick={(e) => {
+            if ((e.target as HTMLElement).closest('button')) return;
+            if (window.electronAPI) {
+              void window.electronAPI.maximize();
+            }
+          }}
+        >
           <RoomMeta>
             <RoomIcon>TD</RoomIcon>
             <div>
@@ -379,6 +392,7 @@ export default function App() {
             >
               重設首次進入
             </ToolButton>
+            <WindowControls />
           </Toolbar>
         </Header>
 

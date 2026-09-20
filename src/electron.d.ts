@@ -6,6 +6,11 @@ export interface ElectronAPI {
   zoomOut: () => Promise<number>;
   resetZoom: () => Promise<number>;
   onZoomChanged: (callback: (factor: number) => void) => () => void;
+  minimize: () => Promise<void>;
+  maximize: () => Promise<boolean>;
+  close: () => Promise<void>;
+  isMaximized: () => Promise<boolean>;
+  onMaximizeChanged: (callback: (isMax: boolean) => void) => () => void;
 }
 
 declare global {
@@ -13,4 +18,3 @@ declare global {
     electronAPI?: ElectronAPI;
   }
 }
-

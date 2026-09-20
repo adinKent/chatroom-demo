@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Window Controls</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-app-region: drag;
+    }
+    .controls-container {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      height: 100%;
+      padding-right: 18px;
+      gap: 6px;
+      -webkit-app-region: drag;
+    }
+    .control-btn {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 33px;
+      padding: 0;
+      border: 1px solid #d7d8e3;
+      border-radius: 9px;
+      background: #fff;
+      color: #34354b;
+      cursor: pointer;
+      outline: none;
+      transition: all 120ms ease;
+      -webkit-app-region: no-drag;
+    }
+    .control-btn:hover {
+      background: #f4f3ff;
+      color: #34354b;
+      border-color: #c8c9db;
+    }
+    .control-btn.close-btn:hover {
+      background: #e81123;
+      color: #fff;
+      border-color: #e81123;
+    }
+    .control-btn svg {
+      width: 12px;
+      height: 12px;
+      fill: currentColor;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls-container" role="group" aria-label="視窗控制">
+    <button id="min-btn" class="control-btn" type="button" title="最小化" aria-label="最小化">
+      <svg viewBox="0 0 12 12">
+        <rect y="5.25" width="12" height="1.5" rx="0.5" />
+      </svg>
+    </button>
+
+    <button id="max-btn" class="control-btn" type="button" title="最大化" aria-label="最大化">
+      <svg id="max-icon" viewBox="0 0 12 12">
+        <rect x="1.25" y="1.25" width="9.5" height="9.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+      </svg>
+      <svg id="restore-icon" viewBox="0 0 12 12" style="display: none;">
+        <path fill-rule="evenodd" d="M3 1a1 1 0 0 0-1 1v1H1a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V9h1a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3zm5 8H1V4h7v5zm1-6V2h2v6H9V4a1 1 0 0 0-1-1H4V2h5z" />
+      </svg>
+    </button>
+
+    <button id="close-btn" class="control-btn close-btn" type="button" title="關閉" aria-label="關閉">
+      <svg viewBox="0 0 12 12">
+        <path fill-rule="evenodd" d="M2.22 1.16a.75.75 0 0 0-1.06 1.06L4.94 6 .16 9.78a.75.75 0 1 0 1.06 1.06L6 7.06l4.78 4.78a.75.75 0 0 0 1.06-1.06L7.06 6l4.78-4.78a.75.75 0 0 0-1.06-1.06L6 4.94 2.22 1.16z" />
+      </svg>
+    </button>
+  </div>
+
+  <script>
+    const minBtn = document.getElementById('min-btn');
+    const maxBtn = document.getElementById('max-btn');
+    const closeBtn = document.getElementById('close-btn');
+    const maxIcon = document.getElementById('max-icon');
+    const restoreIcon = document.getElementById('restore-icon');
+
+    function updateMaxState(isMax) {
+      if (isMax) {
+        maxIcon.style.display = 'none';
+        restoreIcon.style.display = 'block';
+        maxBtn.title = '向下還原';
+        maxBtn.setAttribute('aria-label', '向下還原');
+      } else {
+        maxIcon.style.display = 'block';
+        restoreIcon.style.display = 'none';
+        maxBtn.title = '最大化';
+        maxBtn.setAttribute('aria-label', '最大化');
+      }
+    }
+
+    if (window.electronAPI) {
+      minBtn.addEventListener('click', () => {
+        window.electronAPI.minimize();
+      });
+
+      maxBtn.addEventListener('click', () => {
+        window.electronAPI.maximize();
+      });
+
+      closeBtn.addEventListener('click', () => {
+        window.electronAPI.close();
+      });
+
+      window.electronAPI.isMaximized().then(updateMaxState);
+      if (window.electronAPI.onMaximizeChanged) {
+        window.electronAPI.onMaximizeChanged(updateMaxState);
+      }
+    }
+  </script>
+</body>
+</html>
+

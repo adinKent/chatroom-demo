@@ -7,7 +7,7 @@ import electron from 'electron';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tempScript = join(ROOT, 'electron/test-runner.cjs');
 
-console.log('Testing Electron launch and zoom functionality...');
+console.log('Testing Electron multi-BrowserView architecture and controls...');
 
 const testCode = `
 const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
@@ -16,58 +16,109 @@ const path = require('path');
 ipcMain.handle('set-zoom-factor', (_event, factor) => factor);
 ipcMain.handle('get-zoom-factor', () => 1.0);
 
+let testWin = null;
+let testMainView = null;
+let testControlsView = null;
+
+ipcMain.handle('minimize-window', () => {});
+ipcMain.handle('maximize-window', () => {
+  if (testWin.isMaximized()) {
+    testWin.unmaximize();
+    return false;
+  } else {
+    testWin.maximize();
+    return true;
+  }
+});
+ipcMain.handle('close-window', () => {});
+ipcMain.handle('is-window-maximized', () => testWin.isMaximized());
+
 app.whenReady().then(async () => {
   try {
     const win = new BrowserWindow({
       show: false,
       width: 1200,
       height: 800,
+      frame: false,
     });
+    testWin = win;
 
-    const view = new BrowserView({
+    const mainView = new BrowserView({
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
       },
     });
+    testMainView = mainView;
 
-    win.setBrowserView(view);
-    view.setBounds({ x: 0, y: 0, width: 1200, height: 800 });
-
-    await view.webContents.loadFile(path.join(__dirname, '../dist/index.html'));
-    const title = await view.webContents.executeJavaScript('document.title');
-    console.log('BrowserView Page Title:', title);
-
-    const initialZoom = view.webContents.getZoomFactor();
-    console.log('Initial Zoom Factor:', initialZoom);
-
-    view.webContents.setZoomFactor(1.25);
-    const zoomed = view.webContents.getZoomFactor();
-    console.log('Zoomed Factor:', zoomed);
-
-    view.webContents.setZoomFactor(1.0);
-    const reset = view.webContents.getZoomFactor();
-    console.log('Reset Zoom Factor:', reset);
-
-    const devToolsPromise = new Promise((resolve) => {
-      view.webContents.once('devtools-opened', () => resolve(true));
+    const controlsView = new BrowserView({
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
     });
-    view.webContents.openDevTools({ mode: 'detach' });
+    testControlsView = controlsView;
+
+    win.addBrowserView(mainView);
+    win.addBrowserView(controlsView);
+    win.setTopBrowserView(controlsView);
+
+    controlsView.setBackgroundColor('#00000000');
+    mainView.setBounds({ x: 0, y: 0, width: 1200, height: 800 });
+    controlsView.setBounds({ x: 1200 - 136, y: 0, width: 136, height: 68 });
+
+    await mainView.webContents.loadFile(path.join(__dirname, '../dist/index.html'));
+    await controlsView.webContents.loadFile(path.join(__dirname, 'controls.html'));
+
+    const views = win.getBrowserViews();
+    console.log('BrowserViews count:', views.length);
+
+    const title = await mainView.webContents.executeJavaScript('document.title');
+    console.log('MainView Page Title:', title);
+
+    const controlsTitle = await controlsView.webContents.executeJavaScript('document.title');
+    console.log('ControlsView Title:', controlsTitle);
+
+    // Zoom mainView
+    mainView.webContents.setZoomFactor(1.25);
+    const mainZoomed = mainView.webContents.getZoomFactor();
+    const controlsZoom = controlsView.webContents.getZoomFactor();
+    console.log('MainView Zoomed:', mainZoomed, 'ControlsView Zoom (isolated):', controlsZoom);
+
+    // DevTools check on mainView
+    const devToolsPromise = new Promise((resolve) => {
+      mainView.webContents.once('devtools-opened', () => resolve(true));
+    });
+    mainView.webContents.openDevTools({ mode: 'detach' });
     const devToolsOpened = await devToolsPromise;
-    console.log('DevTools Opened:', devToolsOpened);
-    view.webContents.closeDevTools();
+    console.log('DevTools Opened on mainView:', devToolsOpened);
+    mainView.webContents.closeDevTools();
+
+    // Test maximize via controlsView's electronAPI
+    await controlsView.webContents.executeJavaScript('window.electronAPI.maximize()');
+    const isMax = await controlsView.webContents.executeJavaScript('window.electronAPI.isMaximized()');
+    console.log('Window Maximized via ControlsView API:', isMax);
+
+    await controlsView.webContents.executeJavaScript('window.electronAPI.maximize()');
+    const isRestored = !(await controlsView.webContents.executeJavaScript('window.electronAPI.isMaximized()'));
+    console.log('Window Restored via ControlsView API:', isRestored);
 
     if (
+      views.length !== 2 ||
       title !== 'Teams Chat Demo' ||
-      Math.abs(zoomed - 1.25) > 0.01 ||
-      Math.abs(reset - 1.0) > 0.01 ||
-      !devToolsOpened
+      controlsTitle !== 'Window Controls' ||
+      Math.abs(mainZoomed - 1.25) > 0.01 ||
+      Math.abs(controlsZoom - 1.0) > 0.01 ||
+      !devToolsOpened ||
+      !isMax ||
+      !isRestored
     ) {
       console.error('VERIFICATION FAILED');
       app.exit(1);
     } else {
-      console.log('ELECTRON VERIFICATION PASSED');
+      console.log('ELECTRON MULTI-BROWSERVIEW VERIFICATION PASSED');
       app.exit(0);
     }
   } catch (err) {
