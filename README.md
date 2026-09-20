@@ -16,25 +16,57 @@ React + TypeScript 單一聊天室 demo，模擬 Microsoft Teams 的大量訊息
 - 使用 `react-virtuoso` 虛擬化 50,000 則模擬訊息，DOM 只保留可視範圍附近內容。
 - 圖片訊息只有連結、沒有尺寸，由前端量測後保持 scroll position 不跳動。
 - 使用 Emotion 製作 UI。
+- 支援 Electron 桌面應用程式執行模式：
+  - 支援按 `F12` 或選單快速開啟 / 關閉 Chrome 開發人員工具 (DevTools)。
+- 支援全功能 UI 縮放（Zoom In / Zoom Out / Reset Zoom）：
+  - 頂端工具列提供「−」、「目前百分比 (點選可還原 100%)」、「+」縮放控制。
+  - 支援快速鍵：`Cmd/Ctrl + =` (放大)、`Cmd/Ctrl + -` (縮小)、`Cmd/Ctrl + 0` (還原 100%)。
+  - Electron 模式下整合原生選單（「檢視」-> 放大、縮小、實際大小）與 `webFrame` / `webContents` 縮放 API。
+  - 縮放設定自動保存於 `localStorage`，重新開啟時自動還原偏好。
 
 ## 執行
+
+### Web 模式
 
 ```bash
 npm install
 npm run dev
 ```
 
-正式 build：
+正式 build 與預覽：
 
 ```bash
 npm run build
 npm run preview
 ```
 
-Smoke test（會自己開 dev server 和 headless Chrome）：
+### Electron 桌面模式
+
+開發階段（自動啟動 Vite 並開啟 Electron 桌面視窗）：
+
+```bash
+npm run electron:dev
+```
+
+執行已建置好的 Electron 應用：
+
+```bash
+npm run build
+npm run electron
+```
+
+### 測試
+
+Smoke test（CDP 驅動 headless Chrome 驗證定位與錨點補償）：
 
 ```bash
 npm run smoke
+```
+
+Electron 整合驗證（測試 Electron 視窗與 Zoom API）：
+
+```bash
+npm run test:electron
 ```
 
 ## 主要設計

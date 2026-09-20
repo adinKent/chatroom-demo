@@ -9,7 +9,9 @@ import {
 import { JumpToast } from './components/JumpToast';
 import { MessageItem } from './components/MessageItem';
 import { SettingsDialog } from './components/SettingsDialog';
+import { ZoomControl } from './components/ZoomControl';
 import { useScrollAnchor } from './hooks/useScrollAnchor';
+import { useZoom } from './hooks/useZoom';
 import { prefetchImageSizes } from './data/imageSize';
 import {
   LAST_READ_ID,
@@ -26,7 +28,6 @@ const MODE_KEY = 'teams-chat-demo-entry-mode';
 
 const Shell = styled.main`
   height: 100dvh;
-  padding: 20px;
   background: #ececf3;
 `;
 
@@ -34,7 +35,6 @@ const AppFrame = styled.section`
   position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(1180px, 100%);
   height: 100%;
   margin: 0 auto;
   overflow: hidden;
@@ -103,6 +103,46 @@ const ToolButton = styled.button`
 const Feed = styled.div`
   position: relative;
   min-height: 0;
+  padding: 0;
+  margin: 0;
+
+  [data-virtuoso-scroller] {
+    --scrollbar-thumb: #c1c2d0;
+    --scrollbar-thumb-hover: #9395a5;
+    
+    padding: 0 !important;
+    margin: 0 !important;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    overflow-y: scroll !important;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: var(--scrollbar-track);
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--scrollbar-thumb);
+      border-radius: 999px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background-color: var(--scrollbar-thumb-hover);
+    }
+
+    &::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    &::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+  }
 `;
 
 const Loading = styled.div`
@@ -152,6 +192,7 @@ function getStoredMode(): EntryMode | null {
 
 export default function App() {
   const storedMode = useMemo(getStoredMode, []);
+  const { percentage, canZoomIn, canZoomOut, zoomIn, zoomOut, resetZoom } = useZoom();
   const [showSettings, setShowSettings] = useState(storedMode === null);
   const [draftMode, setDraftMode] = useState<EntryMode>(storedMode ?? 'last-read');
   const [entryMode, setEntryMode] = useState<EntryMode | null>(storedMode);
@@ -324,6 +365,14 @@ export default function App() {
             </div>
           </RoomMeta>
           <Toolbar>
+            <ZoomControl
+              percentage={percentage}
+              canZoomIn={canZoomIn}
+              canZoomOut={canZoomOut}
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+              onResetZoom={resetZoom}
+            />
             <ToolButton onClick={() => setShowSettings(true)}>進入位置設定</ToolButton>
             <ToolButton
               onClick={() => {
@@ -343,6 +392,7 @@ export default function App() {
             <Virtuoso
               ref={virtuosoRef}
               scrollerRef={setScroller}
+              style={{ height: '100%', overflowY: 'scroll', padding: 0, margin: 0 }}
               data={messages}
               firstItemIndex={firstItemIndex}
               initialTopMostItemIndex={initialLocation}

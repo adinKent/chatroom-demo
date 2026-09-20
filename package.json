@@ -3,11 +3,16 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "electron": "node scripts/electron-run.mjs",
+    "electron:dev": "node scripts/electron-dev.mjs",
+    "electron:build": "npm run build",
+    "test:electron": "node scripts/verify-electron.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -20,6 +25,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "electron": "^44.4.3",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
   }
