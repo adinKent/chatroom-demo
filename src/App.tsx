@@ -6,6 +6,7 @@ import {
   type ListRange,
   type VirtuosoHandle,
 } from 'react-virtuoso';
+import { ChannelSidePanel } from './components/ChannelSidePanel';
 import { JumpToast } from './components/JumpToast';
 import { MessageItem } from './components/MessageItem';
 import { SettingsDialog } from './components/SettingsDialog';
@@ -14,6 +15,7 @@ import { ZoomControl } from './components/ZoomControl';
 import { useScrollAnchor } from './hooks/useScrollAnchor';
 import { useZoom } from './hooks/useZoom';
 import { prefetchImageSizes } from './data/imageSize';
+import { MOCK_CHANNELS, type Channel } from './data/mockChannels';
 import {
   LAST_READ_ID,
   NEWEST_ID,
@@ -34,8 +36,7 @@ const Shell = styled.main`
 
 const AppFrame = styled.section`
   position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
   height: 100%;
   margin: 0 auto;
   overflow: hidden;
@@ -43,6 +44,16 @@ const AppFrame = styled.section`
   border-radius: 16px;
   background: #f5f5f8;
   box-shadow: 0 20px 60px rgb(31 41 55 / 12%);
+`;
+
+const ChatMain = styled.div`
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: #f5f5f8;
+  overflow: hidden;
 `;
 
 const Header = styled.header`
@@ -74,15 +85,16 @@ const RoomMeta = styled.div`
   }
 `;
 
-const RoomIcon = styled.div`
+const RoomIcon = styled.div<{ color?: string }>`
   display: grid;
   place-items: center;
   width: 40px;
   height: 40px;
   border-radius: 12px;
   color: #fff;
-  background: #5b5fc7;
+  background: ${({ color }) => color ?? '#5b5fc7'};
   font-weight: 800;
+  flex-shrink: 0;
 `;
 
 const Toolbar = styled.div`
@@ -162,6 +174,99 @@ const LoadMarker = styled.div`
   font-size: 12px;
 `;
 
+const SampleFeed = styled.div`
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #fff;
+`;
+
+const DemoNoticeBanner = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #f0f0f8;
+  border: 1px solid #dcdce8;
+  color: #34354b;
+  font-size: 13px;
+
+  button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: #5b5fc7;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 120ms ease;
+
+    &:hover {
+      background: #4f52b2;
+    }
+  }
+`;
+
+const SampleCard = styled.div`
+  display: flex;
+  gap: 12px;
+  max-width: 800px;
+`;
+
+const SampleAvatar = styled.div<{ color: string }>`
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: ${({ color }) => color};
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+`;
+
+const SampleContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+
+const SampleMeta = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+
+  strong {
+    font-size: 13px;
+    color: #242424;
+  }
+
+  time {
+    font-size: 11px;
+    color: #77798b;
+  }
+`;
+
+const SampleBubble = styled.div`
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #f8f8fa;
+  border: 1px solid #e1dfdd;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #242424;
+`;
+
 const Composer = styled.footer`
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -194,6 +299,22 @@ function getStoredMode(): EntryMode | null {
 }
 
 export default function App() {
+  const [channels, setChannels] = useState<Channel[]>(MOCK_CHANNELS);
+  const [activeChannelId, setActiveChannelId] = useState<string>('project-discussion');
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const activeChannel = useMemo(
+    () => channels.find((c) => c.id === activeChannelId) ?? channels[0],
+    [channels, activeChannelId],
+  );
+
+  const handleSelectChannel = useCallback((id: string) => {
+    setActiveChannelId(id);
+    setChannels((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)),
+    );
+  }, []);
+
   const storedMode = useMemo(getStoredMode, []);
   const { percentage, canZoomIn, canZoomOut, zoomIn, zoomOut, resetZoom } = useZoom();
   const [showSettings, setShowSettings] = useState(storedMode === null);
@@ -359,98 +480,146 @@ export default function App() {
   return (
     <Shell>
       <AppFrame>
-        <Header
-          onDoubleClick={(e) => {
-            if ((e.target as HTMLElement).closest('button')) return;
-            if (window.electronAPI) {
-              void window.electronAPI.maximize();
-            }
-          }}
-        >
-          <RoomMeta>
-            <RoomIcon>TD</RoomIcon>
-            <div>
-              <h1>Teams Demo · 專案討論</h1>
-              <p>{TOTAL_MESSAGES.toLocaleString('zh-TW')} 則模擬訊息 · 單一聊天室</p>
-            </div>
-          </RoomMeta>
-          <Toolbar>
-            <ZoomControl
-              percentage={percentage}
-              canZoomIn={canZoomIn}
-              canZoomOut={canZoomOut}
-              onZoomIn={zoomIn}
-              onZoomOut={zoomOut}
-              onResetZoom={resetZoom}
-            />
-            <ToolButton onClick={() => setShowSettings(true)}>進入位置設定</ToolButton>
-            <ToolButton
-              onClick={() => {
-                localStorage.removeItem(MODE_KEY);
-                setShowSettings(true);
-              }}
-            >
-              重設首次進入
-            </ToolButton>
-            <WindowControls />
-          </Toolbar>
-        </Header>
+        <ChannelSidePanel
+          channels={channels}
+          activeChannelId={activeChannelId}
+          onSelectChannel={handleSelectChannel}
+          isCollapsed={isCollapsed}
+          onToggleCollapse={() => setIsCollapsed((prev) => !prev)}
+        />
 
-        <Feed>
-          {loading ? (
-            <Loading>載入訊息中…</Loading>
-          ) : (
-            <Virtuoso
-              ref={virtuosoRef}
-              scrollerRef={setScroller}
-              data={messages}
-              firstItemIndex={firstItemIndex}
-              initialTopMostItemIndex={initialLocation}
-              rangeChanged={setVisibleRange}
-              startReached={() => void loadOlderMessages()}
-              endReached={() => void loadNewerMessages()}
-              atBottomThreshold={80}
-              atBottomStateChange={(bottom) => {
-                windowAtBottomRef.current = bottom;
-                syncStickToBottom();
-              }}
-              increaseViewportBy={{ top: 800, bottom: 900 }}
-              computeItemKey={(_, message) => message.id}
-              itemContent={(_, message) => (
-                <MessageItem
-                  message={message}
-                  highlighted={message.id === highlightedId}
-                  firstUnread={message.id === LAST_READ_ID + 1}
+        <ChatMain>
+          <Header
+            onDoubleClick={(e) => {
+              if ((e.target as HTMLElement).closest('button')) return;
+              if (window.electronAPI) {
+                void window.electronAPI.maximize();
+              }
+            }}
+          >
+            <RoomMeta>
+              <RoomIcon color={activeChannel.color}>{activeChannel.tag}</RoomIcon>
+              <div>
+                <h1>{activeChannel.name}</h1>
+                <p>
+                  {activeChannel.is50kDemo
+                    ? `${TOTAL_MESSAGES.toLocaleString('zh-TW')} 則模擬訊息 · 專案討論`
+                    : activeChannel.topic ?? '示範聊天室'}
+                </p>
+              </div>
+            </RoomMeta>
+            <Toolbar>
+              <ZoomControl
+                percentage={percentage}
+                canZoomIn={canZoomIn}
+                canZoomOut={canZoomOut}
+                onZoomIn={zoomIn}
+                onZoomOut={zoomOut}
+                onResetZoom={resetZoom}
+              />
+              {activeChannel.is50kDemo && (
+                <>
+                  <ToolButton onClick={() => setShowSettings(true)}>進入位置設定</ToolButton>
+                  <ToolButton
+                    onClick={() => {
+                      localStorage.removeItem(MODE_KEY);
+                      setShowSettings(true);
+                    }}
+                  >
+                    重設首次進入
+                  </ToolButton>
+                </>
+              )}
+              <WindowControls />
+            </Toolbar>
+          </Header>
+
+          {activeChannel.is50kDemo ? (
+            <Feed>
+              {loading ? (
+                <Loading>載入訊息中…</Loading>
+              ) : (
+                <Virtuoso
+                  ref={virtuosoRef}
+                  scrollerRef={setScroller}
+                  data={messages}
+                  firstItemIndex={firstItemIndex}
+                  initialTopMostItemIndex={initialLocation}
+                  rangeChanged={setVisibleRange}
+                  startReached={() => void loadOlderMessages()}
+                  endReached={() => void loadNewerMessages()}
+                  atBottomThreshold={80}
+                  atBottomStateChange={(bottom) => {
+                    windowAtBottomRef.current = bottom;
+                    syncStickToBottom();
+                  }}
+                  increaseViewportBy={{ top: 800, bottom: 900 }}
+                  computeItemKey={(_, message) => message.id}
+                  itemContent={(_, message) => (
+                    <MessageItem
+                      message={message}
+                      highlighted={message.id === highlightedId}
+                      firstUnread={message.id === LAST_READ_ID + 1}
+                    />
+                  )}
+                  components={{
+                    Header: () => <LoadMarker>{loadingOlder ? '載入較舊訊息…' : '向上捲動載入較舊訊息'}</LoadMarker>,
+                    Footer: () => <LoadMarker>{loadingNewer ? '載入較新訊息…' : '向下捲動載入較新訊息'}</LoadMarker>,
+                  }}
                 />
               )}
-              components={{
-                Header: () => <LoadMarker>{loadingOlder ? '載入較舊訊息…' : '向上捲動載入較舊訊息'}</LoadMarker>,
-                Footer: () => <LoadMarker>{loadingNewer ? '載入較新訊息…' : '向下捲動載入較新訊息'}</LoadMarker>,
-              }}
-            />
+
+              {newestBelow && (
+                <JumpToast
+                  edge="bottom"
+                  label="有更新訊息，前往最新訊息"
+                  onClick={() => void jumpToMessage(NEWEST_ID, 'end')}
+                />
+              )}
+
+              {lastReadAbove && (
+                <JumpToast
+                  edge="top"
+                  label="上次閱讀位置在上方"
+                  onClick={() => void jumpToMessage(LAST_READ_ID, 'center')}
+                />
+              )}
+            </Feed>
+          ) : (
+            <SampleFeed>
+              <DemoNoticeBanner>
+                <span>
+                  這是<strong>「{activeChannel.name}」</strong>的示範頻道。
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleSelectChannel('project-discussion')}
+                >
+                  返回「專案討論 (50,000 則訊息)」
+                </button>
+              </DemoNoticeBanner>
+              {activeChannel.sampleMessages?.map((msg) => (
+                <SampleCard key={msg.id}>
+                  <SampleAvatar color={msg.avatarColor}>
+                    {msg.sender.slice(0, 2)}
+                  </SampleAvatar>
+                  <SampleContent>
+                    <SampleMeta>
+                      <strong>{msg.sender}</strong>
+                      <time>{msg.timestamp}</time>
+                    </SampleMeta>
+                    <SampleBubble>{msg.content}</SampleBubble>
+                  </SampleContent>
+                </SampleCard>
+              ))}
+            </SampleFeed>
           )}
 
-          {newestBelow && (
-            <JumpToast
-              edge="bottom"
-              label="有更新訊息，前往最新訊息"
-              onClick={() => void jumpToMessage(NEWEST_ID, 'end')}
-            />
-          )}
-
-          {lastReadAbove && (
-            <JumpToast
-              edge="top"
-              label="上次閱讀位置在上方"
-              onClick={() => void jumpToMessage(LAST_READ_ID, 'center')}
-            />
-          )}
-        </Feed>
-
-        <Composer>
-          <FakeInput>輸入新訊息（demo 不送出）</FakeInput>
-          <Send type="button">傳送</Send>
-        </Composer>
+          <Composer>
+            <FakeInput>輸入新訊息（demo 不送出）</FakeInput>
+            <Send type="button">傳送</Send>
+          </Composer>
+        </ChatMain>
       </AppFrame>
 
       {showSettings && (
