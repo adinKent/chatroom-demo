@@ -109,9 +109,6 @@ const Feed = styled.div`
   [data-virtuoso-scroller] {
     --scrollbar-thumb: #c1c2d0;
     --scrollbar-thumb-hover: #9395a5;
-    
-    padding: 0 !important;
-    margin: 0 !important;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     overflow-y: scroll !important;
 
@@ -392,7 +389,6 @@ export default function App() {
             <Virtuoso
               ref={virtuosoRef}
               scrollerRef={setScroller}
-              style={{ height: '100%', overflowY: 'scroll', padding: 0, margin: 0 }}
               data={messages}
               firstItemIndex={firstItemIndex}
               initialTopMostItemIndex={initialLocation}
