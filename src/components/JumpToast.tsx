@@ -30,11 +30,12 @@ interface Props {
   edge: 'top' | 'bottom';
   label: string;
   onClick: () => void;
+  onMouseEnter?: () => void;
 }
 
-export function JumpToast({ edge, label, onClick }: Props) {
+export function JumpToast({ edge, label, onClick, onMouseEnter }: Props) {
   return (
-    <Toast edge={edge} onClick={onClick}>
+    <Toast edge={edge} onClick={onClick} onMouseEnter={onMouseEnter}>
       <span aria-hidden="true">{edge === 'top' ? '↑' : '↓'}</span>
       {label}
     </Toast>

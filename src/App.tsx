@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from '@emotion/styled';
+import useSWR from 'swr';
 import {
   Virtuoso,
-  type IndexLocationWithAlign,
   type ListRange,
   type VirtuosoHandle,
 } from 'react-virtuoso';
@@ -12,18 +12,14 @@ import { MessageItem } from './components/MessageItem';
 import { SettingsDialog } from './components/SettingsDialog';
 import { WindowControls } from './components/WindowControls';
 import { ZoomControl } from './components/ZoomControl';
+import { useChatMessages } from './hooks/useChatMessages';
 import { useScrollAnchor } from './hooks/useScrollAnchor';
 import { useZoom } from './hooks/useZoom';
-import { prefetchImageSizes } from './data/imageSize';
 import { MOCK_CHANNELS, type Channel } from './data/mockChannels';
 import {
   LAST_READ_ID,
   NEWEST_ID,
-  PAGE_SIZE,
   TOTAL_MESSAGES,
-  loadNewer,
-  loadOlder,
-  loadSurrounding,
 } from './data/mockChat';
 import type { ChatMessage, EntryMode } from './types';
 
@@ -299,7 +295,11 @@ function getStoredMode(): EntryMode | null {
 }
 
 export default function App() {
-  const [channels, setChannels] = useState<Channel[]>(MOCK_CHANNELS);
+  const { data: channels = MOCK_CHANNELS, mutate: mutateChannels } = useSWR<Channel[]>(
+    'channels',
+    null,
+    { fallbackData: MOCK_CHANNELS, revalidateOnFocus: false },
+  );
   const [activeChannelId, setActiveChannelId] = useState<string>('project-discussion');
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -308,40 +308,60 @@ export default function App() {
     [channels, activeChannelId],
   );
 
-  const handleSelectChannel = useCallback((id: string) => {
-    setActiveChannelId(id);
-    setChannels((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)),
-    );
-  }, []);
+  const handleSelectChannel = useCallback(
+    (id: string) => {
+      setActiveChannelId(id);
+      void mutateChannels(
+        (prev = MOCK_CHANNELS) =>
+          prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)),
+        { revalidate: false },
+      );
+    },
+    [mutateChannels],
+  );
 
   const storedMode = useMemo(getStoredMode, []);
   const { percentage, canZoomIn, canZoomOut, zoomIn, zoomOut, resetZoom } = useZoom();
   const [showSettings, setShowSettings] = useState(storedMode === null);
   const [draftMode, setDraftMode] = useState<EntryMode>(storedMode ?? 'last-read');
   const [entryMode, setEntryMode] = useState<EntryMode | null>(storedMode);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [firstItemIndex, setFirstItemIndex] = useState(TOTAL_MESSAGES);
-  const [loading, setLoading] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [loadingNewer, setLoadingNewer] = useState(false);
   const [visibleRange, setVisibleRange] = useState<ListRange>({ startIndex: 0, endIndex: 0 });
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
-  /**
-   * 定位一律交給 initialTopMostItemIndex，不要 mount 後才 scrollToIndex：
-   * 那時 Virtuoso 還沒量到真實的 item 高度，會用預估值算偏。
-   * Virtuoso 只在掛載時讀這個值，而每次重新載入視窗都會經過 loading 把它卸載重掛。
-   */
-  const [initialLocation, setInitialLocation] = useState<IndexLocationWithAlign>({
-    index: 0,
-    align: 'center',
-  });
+
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
-  const initializedModeRef = useRef<EntryMode | null>(null);
   const windowAtBottomRef = useRef(false);
   const stickToBottomRef = useRef(false);
   const { setScroller, suspend } = useScrollAnchor({ atBottom: stickToBottomRef });
+
+  const handleWindowMount = useCallback(
+    (targetId: number) => {
+      // Virtuoso 重新掛載後的首次量測會大幅搬動內容，錨點補償要整段避開。
+      suspend(1_200);
+      setHighlightedId(targetId);
+      window.setTimeout(() => setHighlightedId(null), 1_800);
+    },
+    [suspend],
+  );
+
+  const {
+    messages,
+    firstItemIndex,
+    initialLocation,
+    virtuosoKey,
+    loading,
+    loadingOlder,
+    loadingNewer,
+    loadOlderMessages,
+    loadNewerMessages,
+    selectAnchor,
+    prefetchAdjacentPages,
+    prefetchAnchor,
+  } = useChatMessages({
+    channelId: activeChannelId,
+    entryMode: activeChannel.is50kDemo ? entryMode : null,
+    onWindowMount: handleWindowMount,
+  });
 
   /**
    * Virtuoso 的 atBottom 指的是「已載入視窗的底部」，不是「對話的最新一則」。
@@ -357,108 +377,42 @@ export default function App() {
     syncStickToBottom();
   }, [messages, syncStickToBottom]);
 
-  const focusMessage = useCallback((messageId: number) => {
-    const localIndex = messagesRef.current.findIndex((message) => message.id === messageId);
-    if (localIndex < 0) return false;
+  const focusMessage = useCallback(
+    (messageId: number) => {
+      const localIndex = messagesRef.current.findIndex((message) => message.id === messageId);
+      if (localIndex < 0) return false;
 
-    suspend();
-    virtuosoRef.current?.scrollToIndex({
-      // scrollToIndex 使用目前 data 的區域索引；firstItemIndex 只用來維持 prepend 的
-      // 全域編號。兩者相加會超出 data 範圍，讓 Virtuoso 誤捲到 window 尾端。
-      index: localIndex,
-      align: 'center',
-      behavior: 'smooth',
-    });
-    setHighlightedId(messageId);
-    window.setTimeout(() => setHighlightedId(null), 1_800);
-    return true;
-  }, [suspend]);
-
-  const initialize = useCallback(async (mode: EntryMode) => {
-    setLoading(true);
-    initializedModeRef.current = mode;
-
-    const targetId = mode === 'last-read' ? LAST_READ_ID : NEWEST_ID;
-    const before = mode === 'newest' ? PAGE_SIZE * 2 : PAGE_SIZE;
-    const after = mode === 'newest' ? 0 : PAGE_SIZE;
-    const windowData = await loadSurrounding(targetId, before, after);
-
-    prefetchImageSizes(windowData.messages);
-    // Virtuoso 重新掛載後的首次量測會大幅搬動內容，錨點補償要整段避開。
-    suspend(1_200);
-    setInitialLocation({
-      index: Math.max(windowData.messages.findIndex((message) => message.id === targetId), 0),
-      align: mode === 'newest' ? 'end' : 'center',
-    });
-    setMessages(windowData.messages);
-    setFirstItemIndex(windowData.firstId - 1);
-    setLoading(false);
-    setHighlightedId(targetId);
-    window.setTimeout(() => setHighlightedId(null), 1_800);
-  }, [suspend]);
-
-  useEffect(() => {
-    if (entryMode && initializedModeRef.current !== entryMode) {
-      void initialize(entryMode);
-    }
-  }, [entryMode, initialize]);
+      suspend();
+      virtuosoRef.current?.scrollToIndex({
+        // scrollToIndex 使用目前 data 的區域索引；firstItemIndex 只用來維持 prepend 的
+        // 全域編號。兩者相加會超出 data 範圍，讓 Virtuoso 誤捲到 window 尾端。
+        index: localIndex,
+        align: 'center',
+        behavior: 'smooth',
+      });
+      setHighlightedId(messageId);
+      window.setTimeout(() => setHighlightedId(null), 1_800);
+      return true;
+    },
+    [suspend],
+  );
 
   const confirmSettings = () => {
     localStorage.setItem(MODE_KEY, draftMode);
     setEntryMode(draftMode);
+    selectAnchor(
+      draftMode === 'last-read' ? LAST_READ_ID : NEWEST_ID,
+      draftMode === 'newest' ? 'end' : 'center',
+    );
     setShowSettings(false);
   };
 
-  const loadOlderMessages = useCallback(async () => {
-    const first = messagesRef.current[0];
-    if (!first || first.id <= 1 || loadingOlder) return;
-
-    setLoadingOlder(true);
-    const older = await loadOlder(first.id);
-    if (older.length > 0) {
-      prefetchImageSizes(older);
-      setMessages((current) => [...older, ...current]);
-      setFirstItemIndex((current) => current - older.length);
-    }
-    setLoadingOlder(false);
-  }, [loadingOlder]);
-
-  const loadNewerMessages = useCallback(async () => {
-    const last = messagesRef.current.at(-1);
-    if (!last || last.id >= NEWEST_ID || loadingNewer) return;
-
-    setLoadingNewer(true);
-    const newer = await loadNewer(last.id);
-    if (newer.length > 0) {
-      prefetchImageSizes(newer);
-      setMessages((current) => [...current, ...newer]);
-    }
-    setLoadingNewer(false);
-  }, [loadingNewer]);
-
   const jumpToMessage = useCallback(
-    async (targetId: number, align: 'center' | 'end') => {
+    (targetId: number, align: 'center' | 'end') => {
       if (focusMessage(targetId)) return;
-
-      setLoading(true);
-      const windowData = await loadSurrounding(
-        targetId,
-        align === 'end' ? PAGE_SIZE * 2 : PAGE_SIZE,
-        align === 'end' ? 0 : PAGE_SIZE,
-      );
-      prefetchImageSizes(windowData.messages);
-      suspend(1_200);
-      setInitialLocation({
-        index: Math.max(windowData.messages.findIndex((message) => message.id === targetId), 0),
-        align,
-      });
-      setMessages(windowData.messages);
-      setFirstItemIndex(windowData.firstId - 1);
-      setLoading(false);
-      setHighlightedId(targetId);
-      window.setTimeout(() => setHighlightedId(null), 1_800);
+      selectAnchor(targetId, align);
     },
-    [focusMessage, suspend],
+    [focusMessage, selectAnchor],
   );
 
   const visibleStart = Math.max(0, visibleRange.startIndex - firstItemIndex);
@@ -476,6 +430,15 @@ export default function App() {
     entryMode === 'newest' &&
     firstVisibleId !== undefined &&
     LAST_READ_ID < firstVisibleId;
+
+  useEffect(() => {
+    if (newestBelow) {
+      prefetchAnchor(NEWEST_ID, 'end');
+    }
+    if (lastReadAbove) {
+      prefetchAnchor(LAST_READ_ID, 'center');
+    }
+  }, [newestBelow, lastReadAbove, prefetchAnchor]);
 
   return (
     <Shell>
@@ -540,12 +503,18 @@ export default function App() {
                 <Loading>載入訊息中…</Loading>
               ) : (
                 <Virtuoso
+                  key={virtuosoKey}
                   ref={virtuosoRef}
                   scrollerRef={setScroller}
                   data={messages}
                   firstItemIndex={firstItemIndex}
                   initialTopMostItemIndex={initialLocation}
-                  rangeChanged={setVisibleRange}
+                  rangeChanged={(range) => {
+                    setVisibleRange(range);
+                    const localStart = Math.max(0, range.startIndex - firstItemIndex);
+                    const localEnd = Math.max(localStart, range.endIndex - firstItemIndex);
+                    prefetchAdjacentPages(localStart, localEnd);
+                  }}
                   startReached={() => void loadOlderMessages()}
                   endReached={() => void loadNewerMessages()}
                   atBottomThreshold={80}
@@ -573,7 +542,8 @@ export default function App() {
                 <JumpToast
                   edge="bottom"
                   label="有更新訊息，前往最新訊息"
-                  onClick={() => void jumpToMessage(NEWEST_ID, 'end')}
+                  onMouseEnter={() => prefetchAnchor(NEWEST_ID, 'end')}
+                  onClick={() => jumpToMessage(NEWEST_ID, 'end')}
                 />
               )}
 
@@ -581,7 +551,8 @@ export default function App() {
                 <JumpToast
                   edge="top"
                   label="上次閱讀位置在上方"
-                  onClick={() => void jumpToMessage(LAST_READ_ID, 'center')}
+                  onMouseEnter={() => prefetchAnchor(LAST_READ_ID, 'center')}
+                  onClick={() => jumpToMessage(LAST_READ_ID, 'center')}
                 />
               )}
             </Feed>
